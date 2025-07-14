@@ -88,6 +88,7 @@
             <th>Data</th>
             <th>Comandante</th>
             <th>Aeronave</th>
+            <th>Matrícula</th>
             <th>Lucro</th>
           </tr>
         </thead>
@@ -104,7 +105,7 @@
       apiKey: "AIzaSyD7SE9XR48nqXKS_vvmk6c4cJ9ITJAumko",
       authDomain: "riofly-aviation.firebaseapp.com",
       projectId: "riofly-aviation",
-      storageBucket: "riofly-aviation.firebasestorage.app",
+      storageBucket: "riofly-aviation.appspot.com",
       messagingSenderId: "162992793097",
       appId: "1:162992793097:web:d4ee41e33dd948d0a0bad8",
       databaseURL: "https://riofly-aviation-default-rtdb.firebaseio.com"
@@ -137,11 +138,23 @@
       const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
 
       ordenado.forEach(([id, voo]) => {
+        // Separar aeronave e matrícula
+        let aeronave = voo.aeronave;
+        let modelo = aeronave;
+        let matricula = "";
+
+        const partes = aeronave.split(" ");
+        if (partes.length >= 2) {
+          modelo = partes.slice(0, -1).join(" ");
+          matricula = partes[partes.length - 1];
+        }
+
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${voo.data}</td>
           <td>${voo.comandante} (${voo.vid})</td>
-          <td>${voo.aeronave}</td>
+          <td>${modelo}</td>
+          <td>${matricula}</td>
           <td>R$ ${voo.lucro.toLocaleString('pt-BR')}</td>
         `;
         tabela.appendChild(tr);
