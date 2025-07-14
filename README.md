@@ -1,9 +1,10 @@
+
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Painel Bancário - RioFly Aviation</title>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     * {
@@ -55,12 +56,28 @@
     th {
       background-color: #f4f4f4;
     }
+    button.btn-apagar {
+      background-color: #cc3300;
+      border: none;
+      padding: 0.3rem 0.6rem;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button.btn-apagar:hover {
+      background-color: #991f00;
+    }
     @media (max-width: 600px) {
       main {
         margin: 1rem;
         padding: 1rem;
       }
       table {
+        font-size: 0.85rem;
+      }
+      button.btn-apagar {
+        padding: 0.2rem 0.4rem;
         font-size: 0.85rem;
       }
     }
@@ -90,6 +107,7 @@
             <th>Aeronave</th>
             <th>Matrícula</th>
             <th>Lucro</th>
+            <th>Ações</th>
           </tr>
         </thead>
         <tbody id="tabelaTransacoes"></tbody>
@@ -99,7 +117,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+    import { getDatabase, ref, onValue, remove, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyD7SE9XR48nqXKS_vvmk6c4cJ9ITJAumko",
@@ -121,24 +139,28 @@
     const saldoRef = ref(db, 'banco/saldo');
     const diarioRef = ref(db, 'diario_bordo');
 
-    onValue(saldoRef, (snapshot) => {
-      const saldo = snapshot.val();
-      saldoEl.textContent = `R$ ${saldo.toLocaleString('pt-BR')}`;
-    });
-
     let dadosGrafico = [];
     let rotulosGrafico = [];
+    let voosAtuais = {};
 
+    // Atualiza o saldo exibido
+    onValue(saldoRef, (snapshot) => {
+      const saldo = snapshot.val();
+      saldoEl.textContent = saldo !== null ? `R$ ${saldo.toLocaleString('pt-BR')}` : "R$ 0";
+    });
+
+    // Atualiza a tabela de voos e gráfico
     onValue(diarioRef, (snapshot) => {
       const data = snapshot.val();
       tabela.innerHTML = "";
       dadosGrafico = [];
       rotulosGrafico = [];
+      voosAtuais = data || {};
 
+      // Ordena voos por timestamp (assumindo que cada voo tem timestamp)
       const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
 
       ordenado.forEach(([id, voo]) => {
-        // Separar aeronave e matrícula
         let aeronave = voo.aeronave;
         let modelo = aeronave;
         let matricula = "";
@@ -156,16 +178,41 @@
           <td>${modelo}</td>
           <td>${matricula}</td>
           <td>R$ ${voo.lucro.toLocaleString('pt-BR')}</td>
+          <td><button class="btn-apagar" data-id="${id}">Apagar</button></td>
         `;
         tabela.appendChild(tr);
-
-        rotulosGrafico.push(voo.data);
-        dadosGrafico.push(voo.lucro);
       });
 
       renderizarGrafico();
+
+      // Adiciona evento para apagar voos
+      document.querySelectorAll(".btn-apagar").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+          const id = e.target.getAttribute("data-id");
+          const voo = voosAtuais[id];
+          if (!voo) {
+            alert("Voo não encontrado.");
+            return;
+          }
+          if (confirm(`Deseja apagar o voo do comandante ${voo.comandante} na data ${voo.data}?`)) {
+            try {
+              // Remove o voo do banco
+              await remove(ref(db, `diario_bordo/${id}`));
+              // Atualiza o saldo subtraindo o lucro do voo removido
+              await runTransaction(saldoRef, (currentSaldo) => {
+                if (currentSaldo === null) return 0;
+                return currentSaldo - (voo.lucro || 0);
+              });
+              alert("Voo apagado e saldo atualizado com sucesso!");
+            } catch (error) {
+              alert("Erro ao apagar voo: " + error.message);
+            }
+          }
+        });
+      });
     });
 
+    // Função para renderizar gráfico dos lucros
     function renderizarGrafico() {
       new Chart(graficoCanvas, {
         type: 'line',
