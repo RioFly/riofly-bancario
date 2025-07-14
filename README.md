@@ -47,11 +47,13 @@
     table {
       width: 100%;
       border-collapse: collapse;
+      margin-bottom: 2rem;
     }
     th, td {
       padding: 0.75rem;
       border: 1px solid #ccc;
       text-align: left;
+      vertical-align: middle;
     }
     th {
       background-color: #f4f4f4;
@@ -93,12 +95,12 @@
     <div class="saldo" id="saldoAtual">Carregando...</div>
 
     <div class="grafico-container">
-      <h2>Histórico de Lucros</h2>
+      <h2>Histórico de Lucros (Voos)</h2>
       <canvas id="graficoLucro" height="100"></canvas>
     </div>
 
-    <div>
-      <h2>Transações Recentes</h2>
+    <section>
+      <h2>Transações de Voos Recentes</h2>
       <table>
         <thead>
           <tr>
@@ -106,13 +108,29 @@
             <th>Comandante</th>
             <th>Aeronave</th>
             <th>Matrícula</th>
-            <th>Lucro</th>
+            <th>Lucro (R$)</th>
             <th>Ações</th>
           </tr>
         </thead>
-        <tbody id="tabelaTransacoes"></tbody>
+        <tbody id="tabelaVoos"></tbody>
       </table>
-    </div>
+    </section>
+
+    <section>
+      <h2>Transações de Manutenção Recentes</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Aeronave</th>
+            <th>Descrição</th>
+            <th>Custo (R$)</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tabelaManutencao"></tbody>
+      </table>
+    </section>
   </main>
 
   <script type="module">
@@ -133,15 +151,19 @@
     const db = getDatabase(app);
 
     const saldoEl = document.getElementById("saldoAtual");
-    const tabela = document.getElementById("tabelaTransacoes");
+    const tabelaVoos = document.getElementById("tabelaVoos");
+    const tabelaManutencao = document.getElementById("tabelaManutencao");
     const graficoCanvas = document.getElementById("graficoLucro");
 
     const saldoRef = ref(db, 'banco/saldo');
     const diarioRef = ref(db, 'diario_bordo');
+    const manutencaoRef = ref(db, 'manutencao');
 
     let dadosGrafico = [];
     let rotulosGrafico = [];
     let voosAtuais = {};
+    let manutencoesAtuais = {};
+    let chartInstance = null;
 
     // Atualiza o saldo exibido
     onValue(saldoRef, (snapshot) => {
@@ -149,15 +171,15 @@
       saldoEl.textContent = saldo !== null ? `R$ ${saldo.toLocaleString('pt-BR')}` : "R$ 0";
     });
 
-    // Atualiza a tabela de voos e gráfico
+    // Atualiza voos
     onValue(diarioRef, (snapshot) => {
       const data = snapshot.val();
-      tabela.innerHTML = "";
+      tabelaVoos.innerHTML = "";
       dadosGrafico = [];
       rotulosGrafico = [];
       voosAtuais = data || {};
 
-      // Ordena voos por timestamp (assumindo que cada voo tem timestamp)
+      // Ordena voos por timestamp
       const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
 
       ordenado.forEach(([id, voo]) => {
@@ -178,27 +200,56 @@
           <td>${modelo}</td>
           <td>${matricula}</td>
           <td>R$ ${voo.lucro.toLocaleString('pt-BR')}</td>
-          <td><button class="btn-apagar" data-id="${id}">Apagar</button></td>
+          <td><button class="btn-apagar" data-id="${id}" data-tipo="voo">Apagar</button></td>
         `;
-        tabela.appendChild(tr);
+        tabelaVoos.appendChild(tr);
+
+        rotulosGrafico.push(voo.data);
+        dadosGrafico.push(voo.lucro);
       });
 
       renderizarGrafico();
+      adicionarEventosApagar();
+    });
 
-      // Adiciona evento para apagar voos
-      document.querySelectorAll(".btn-apagar").forEach(btn => {
-        btn.addEventListener("click", async (e) => {
-          const id = e.target.getAttribute("data-id");
-          const voo = voosAtuais[id];
-          if (!voo) {
-            alert("Voo não encontrado.");
-            return;
-          }
-          if (confirm(`Deseja apagar o voo do comandante ${voo.comandante} na data ${voo.data}?`)) {
+    // Atualiza manutenções
+    onValue(manutencaoRef, (snapshot) => {
+      const data = snapshot.val();
+      tabelaManutencao.innerHTML = "";
+      manutencoesAtuais = data || {};
+
+      // Ordena manutenções por timestamp
+      const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
+
+      ordenado.forEach(([id, manut]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${manut.data}</td>
+          <td>${manut.aeronave}</td>
+          <td>${manut.descricao || ''}</td>
+          <td>R$ ${manut.custo.toLocaleString('pt-BR')}</td>
+          <td><button class="btn-apagar" data-id="${id}" data-tipo="manutencao">Apagar</button></td>
+        `;
+        tabelaManutencao.appendChild(tr);
+      });
+
+      adicionarEventosApagar();
+    });
+
+    // Função para adicionar eventos aos botões apagar (tanto voos quanto manutenção)
+    function adicionarEventosApagar() {
+      document.querySelectorAll("button.btn-apagar").forEach(btn => {
+        btn.onclick = async (e) => {
+          const id = btn.getAttribute("data-id");
+          const tipo = btn.getAttribute("data-tipo");
+
+          if (tipo === "voo") {
+            const voo = voosAtuais[id];
+            if (!voo) return alert("Voo não encontrado.");
+            if (!confirm(`Deseja apagar o voo do comandante ${voo.comandante} na data ${voo.data}?`)) return;
+
             try {
-              // Remove o voo do banco
               await remove(ref(db, `diario_bordo/${id}`));
-              // Atualiza o saldo subtraindo o lucro do voo removido
               await runTransaction(saldoRef, (currentSaldo) => {
                 if (currentSaldo === null) return 0;
                 return currentSaldo - (voo.lucro || 0);
@@ -207,14 +258,33 @@
             } catch (error) {
               alert("Erro ao apagar voo: " + error.message);
             }
-          }
-        });
-      });
-    });
 
-    // Função para renderizar gráfico dos lucros
+          } else if (tipo === "manutencao") {
+            const manut = manutencoesAtuais[id];
+            if (!manut) return alert("Transação de manutenção não encontrada.");
+            if (!confirm(`Deseja apagar a manutenção da aeronave ${manut.aeronave} na data ${manut.data}?`)) return;
+
+            try {
+              await remove(ref(db, `manutencao/${id}`));
+              await runTransaction(saldoRef, (currentSaldo) => {
+                if (currentSaldo === null) return 0;
+                return currentSaldo + (manut.custo || 0); // somar custo pois é despesa
+              });
+              alert("Manutenção apagada e saldo atualizado com sucesso!");
+            } catch (error) {
+              alert("Erro ao apagar manutenção: " + error.message);
+            }
+          }
+        };
+      });
+    }
+
+    // Renderiza gráfico e previne múltiplas instâncias
     function renderizarGrafico() {
-      new Chart(graficoCanvas, {
+      if(chartInstance) {
+        chartInstance.destroy();
+      }
+      chartInstance = new Chart(graficoCanvas, {
         type: 'line',
         data: {
           labels: rotulosGrafico,
@@ -229,9 +299,7 @@
         options: {
           responsive: true,
           plugins: {
-            legend: {
-              display: true
-            }
+            legend: { display: true }
           }
         }
       });
