@@ -8,76 +8,73 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+      margin: 0; padding: 0; box-sizing: border-box;
       font-family: 'Outfit', sans-serif;
     }
-    body {
-      background: #eaf0f5;
-      color: #333;
-    }
+    body { background: #eaf0f5; color: #333; }
     header {
-      background-color: #003366;
-      color: white;
-      padding: 2rem;
-      text-align: center;
+      background-color: #003366; color: white;
+      padding: 2rem; text-align: center;
     }
     main {
-      max-width: 1000px;
-      margin: 2rem auto;
-      background: white;
-      padding: 2rem;
-      border-radius: 16px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.1);
+      max-width: 1000px; margin: 2rem auto;
+      background: white; padding: 2rem;
+      border-radius: 16px; box-shadow: 0 6px 18px rgba(0,0,0,0.1);
     }
-    h2 {
-      color: #003366;
-      margin-bottom: 1rem;
-    }
+    h2 { color: #003366; margin-bottom: 1rem; }
     .saldo {
-      font-size: 1.5rem;
-      font-weight: 600;
-      color: green;
-      margin-bottom: 2rem;
+      font-size: 1.5rem; font-weight: 600;
+      color: green; margin-bottom: 2rem;
     }
-    .grafico-container {
-      margin-bottom: 2rem;
-    }
+    .grafico-container { margin-bottom: 2rem; }
     table {
-      width: 100%;
-      border-collapse: collapse;
+      width: 100%; border-collapse: collapse;
       margin-bottom: 2rem;
     }
     th, td {
-      padding: 0.75rem;
-      border: 1px solid #ccc;
-      text-align: left;
-      vertical-align: middle;
+      padding: 0.75rem; border: 1px solid #ccc;
+      text-align: left; vertical-align: middle;
     }
-    th {
-      background-color: #f4f4f4;
-    }
+    th { background-color: #f4f4f4; }
     button.btn-apagar {
-      background-color: #cc3300;
-      border: none;
-      padding: 0.3rem 0.6rem;
-      color: white;
-      border-radius: 6px;
-      cursor: pointer;
+      background-color: #cc3300; border: none;
+      padding: 0.3rem 0.6rem; color: white;
+      border-radius: 6px; cursor: pointer;
       transition: background 0.3s;
     }
-    button.btn-apagar:hover {
-      background-color: #991f00;
+    button.btn-apagar:hover { background-color: #991f00; }
+    button#abrirFormManutencao {
+      background-color: #003366; color: white;
+      padding: 0.5rem 1rem; margin-bottom: 1rem;
+      border: none; border-radius: 6px;
+      cursor: pointer;
+    }
+    form#formManutencao {
+      display: none;
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 2rem;
+    }
+    form#formManutencao input {
+      margin-bottom: 0.5rem;
+      padding: 0.5rem;
+      width: 100%;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+    form#formManutencao button {
+      margin-top: 0.5rem;
+      background-color: #0066cc;
+      color: white;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
     }
     @media (max-width: 600px) {
-      main {
-        margin: 1rem;
-        padding: 1rem;
-      }
-      table {
-        font-size: 0.85rem;
-      }
+      main { margin: 1rem; padding: 1rem; }
+      table { font-size: 0.85rem; }
       button.btn-apagar {
         padding: 0.2rem 0.4rem;
         font-size: 0.85rem;
@@ -118,6 +115,13 @@
 
     <section>
       <h2>Transações de Manutenção Recentes</h2>
+      <button id="abrirFormManutencao">Registrar Manutenção</button>
+      <form id="formManutencao">
+        <input type="text" id="manutAeronave" placeholder="Aeronave (modelo + matrícula)" required />
+        <input type="text" id="manutDescricao" placeholder="Descrição" required />
+        <input type="number" id="manutCusto" placeholder="Custo (R$)" required />
+        <button type="submit">Registrar</button>
+      </form>
       <table>
         <thead>
           <tr>
@@ -135,7 +139,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getDatabase, ref, onValue, remove, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+    import { getDatabase, ref, onValue, push, remove, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyD7SE9XR48nqXKS_vvmk6c4cJ9ITJAumko",
@@ -165,29 +169,26 @@
     let manutencoesAtuais = {};
     let chartInstance = null;
 
-    // Atualiza o saldo exibido
-    onValue(saldoRef, (snapshot) => {
-      const saldo = snapshot.val();
+    // Saldo
+    onValue(saldoRef, (snap) => {
+      const saldo = snap.val();
       saldoEl.textContent = saldo !== null ? `R$ ${saldo.toLocaleString('pt-BR')}` : "R$ 0";
     });
 
-    // Atualiza voos
-    onValue(diarioRef, (snapshot) => {
-      const data = snapshot.val();
+    // Voos
+    onValue(diarioRef, (snap) => {
+      const data = snap.val();
       tabelaVoos.innerHTML = "";
       dadosGrafico = [];
       rotulosGrafico = [];
       voosAtuais = data || {};
 
-      // Ordena voos por timestamp
       const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
 
       ordenado.forEach(([id, voo]) => {
-        let aeronave = voo.aeronave;
-        let modelo = aeronave;
+        let modelo = voo.aeronave;
         let matricula = "";
-
-        const partes = aeronave.split(" ");
+        const partes = modelo.split(" ");
         if (partes.length >= 2) {
           modelo = partes.slice(0, -1).join(" ");
           matricula = partes[partes.length - 1];
@@ -212,22 +213,20 @@
       adicionarEventosApagar();
     });
 
-    // Atualiza manutenções
-    onValue(manutencaoRef, (snapshot) => {
-      const data = snapshot.val();
+    // Manutenção
+    onValue(manutencaoRef, (snap) => {
+      const data = snap.val();
       tabelaManutencao.innerHTML = "";
       manutencoesAtuais = data || {};
 
-      // Ordena manutenções por timestamp
       const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
-
-      ordenado.forEach(([id, manut]) => {
+      ordenado.forEach(([id, m]) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${manut.data}</td>
-          <td>${manut.aeronave}</td>
-          <td>${manut.descricao || ''}</td>
-          <td>R$ ${manut.custo.toLocaleString('pt-BR')}</td>
+          <td>${m.data}</td>
+          <td>${m.aeronave}</td>
+          <td>${m.descricao}</td>
+          <td>R$ ${m.custo.toLocaleString('pt-BR')}</td>
           <td><button class="btn-apagar" data-id="${id}" data-tipo="manutencao">Apagar</button></td>
         `;
         tabelaManutencao.appendChild(tr);
@@ -236,54 +235,31 @@
       adicionarEventosApagar();
     });
 
-    // Função para adicionar eventos aos botões apagar (tanto voos quanto manutenção)
     function adicionarEventosApagar() {
-      document.querySelectorAll("button.btn-apagar").forEach(btn => {
-        btn.onclick = async (e) => {
-          const id = btn.getAttribute("data-id");
-          const tipo = btn.getAttribute("data-tipo");
+      document.querySelectorAll(".btn-apagar").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.id;
+          const tipo = btn.dataset.tipo;
 
           if (tipo === "voo") {
             const voo = voosAtuais[id];
-            if (!voo) return alert("Voo não encontrado.");
-            if (!confirm(`Deseja apagar o voo do comandante ${voo.comandante} na data ${voo.data}?`)) return;
-
-            try {
-              await remove(ref(db, `diario_bordo/${id}`));
-              await runTransaction(saldoRef, (currentSaldo) => {
-                if (currentSaldo === null) return 0;
-                return currentSaldo - (voo.lucro || 0);
-              });
-              alert("Voo apagado e saldo atualizado com sucesso!");
-            } catch (error) {
-              alert("Erro ao apagar voo: " + error.message);
-            }
-
-          } else if (tipo === "manutencao") {
-            const manut = manutencoesAtuais[id];
-            if (!manut) return alert("Transação de manutenção não encontrada.");
-            if (!confirm(`Deseja apagar a manutenção da aeronave ${manut.aeronave} na data ${manut.data}?`)) return;
-
-            try {
-              await remove(ref(db, `manutencao/${id}`));
-              await runTransaction(saldoRef, (currentSaldo) => {
-                if (currentSaldo === null) return 0;
-                return currentSaldo + (manut.custo || 0); // somar custo pois é despesa
-              });
-              alert("Manutenção apagada e saldo atualizado com sucesso!");
-            } catch (error) {
-              alert("Erro ao apagar manutenção: " + error.message);
-            }
+            if (!voo || !confirm(`Apagar voo de ${voo.comandante} em ${voo.data}?`)) return;
+            await remove(ref(db, `diario_bordo/${id}`));
+            await runTransaction(saldoRef, saldo => saldo - voo.lucro);
+            alert("Voo removido.");
+          } else {
+            const m = manutencoesAtuais[id];
+            if (!m || !confirm(`Apagar manutenção de ${m.aeronave} em ${m.data}?`)) return;
+            await remove(ref(db, `manutencao/${id}`));
+            await runTransaction(saldoRef, saldo => saldo + m.custo);
+            alert("Manutenção removida.");
           }
         };
       });
     }
 
-    // Renderiza gráfico e previne múltiplas instâncias
     function renderizarGrafico() {
-      if(chartInstance) {
-        chartInstance.destroy();
-      }
+      if (chartInstance) chartInstance.destroy();
       chartInstance = new Chart(graficoCanvas, {
         type: 'line',
         data: {
@@ -298,12 +274,36 @@
         },
         options: {
           responsive: true,
-          plugins: {
-            legend: { display: true }
-          }
+          plugins: { legend: { display: true } }
         }
       });
     }
+
+    // Formulário de manutenção
+    const btnAbrirForm = document.getElementById("abrirFormManutencao");
+    const formManutencao = document.getElementById("formManutencao");
+    btnAbrirForm.onclick = () => {
+      formManutencao.style.display = formManutencao.style.display === "none" ? "block" : "none";
+    };
+
+    formManutencao.onsubmit = async (e) => {
+      e.preventDefault();
+      const aeronave = document.getElementById("manutAeronave").value.trim();
+      const descricao = document.getElementById("manutDescricao").value.trim();
+      const custo = parseFloat(document.getElementById("manutCusto").value);
+      const data = new Date().toLocaleDateString("pt-BR");
+
+      const novaManutencao = {
+        aeronave, descricao, custo,
+        data, timestamp: Date.now()
+      };
+
+      await push(manutencaoRef, novaManutencao);
+      await runTransaction(saldoRef, saldo => saldo - custo);
+      alert("Manutenção registrada com sucesso!");
+      formManutencao.reset();
+      formManutencao.style.display = "none";
+    };
   </script>
 </body>
 </html>
