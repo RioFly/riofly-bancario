@@ -1,4 +1,3 @@
-
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
@@ -43,27 +42,29 @@
       transition: background 0.3s;
     }
     button.btn-apagar:hover { background-color: #991f00; }
-    button#abrirFormManutencao {
+    button.toggle-form {
       background-color: #003366; color: white;
       padding: 0.5rem 1rem; margin-bottom: 1rem;
       border: none; border-radius: 6px;
       cursor: pointer;
+      margin-right: 1rem;
     }
-    form#formManutencao {
+    form {
       display: none;
       background-color: #f4f4f4;
       padding: 1rem;
       border-radius: 8px;
       margin-bottom: 2rem;
+      max-width: 600px;
     }
-    form#formManutencao input {
+    form input {
       margin-bottom: 0.5rem;
       padding: 0.5rem;
       width: 100%;
       border-radius: 6px;
       border: 1px solid #ccc;
     }
-    form#formManutencao button {
+    form button {
       margin-top: 0.5rem;
       background-color: #0066cc;
       color: white;
@@ -79,6 +80,14 @@
         padding: 0.2rem 0.4rem;
         font-size: 0.85rem;
       }
+      button.toggle-form {
+        margin-bottom: 0.5rem;
+        margin-right: 0;
+        width: 100%;
+      }
+      form {
+        max-width: 100%;
+      }
     }
   </style>
 </head>
@@ -91,8 +100,40 @@
     <h2>Saldo Atual</h2>
     <div class="saldo" id="saldoAtual">Carregando...</div>
 
+    <div>
+      <button id="btnAbrirFormManutencao" class="toggle-form">Registrar Manutenção</button>
+      <button id="btnAbrirFormVenda" class="toggle-form">Registrar Venda de Aeronave</button>
+      <button id="btnAbrirFormCompra" class="toggle-form">Registrar Compra de Aeronave</button>
+    </div>
+
+    <!-- Formulário Manutenção -->
+    <form id="formManutencao">
+      <input type="text" id="manutAeronave" placeholder="Aeronave (modelo + matrícula)" required />
+      <input type="text" id="manutDescricao" placeholder="Descrição" required />
+      <input type="number" id="manutCusto" placeholder="Custo (R$)" required />
+      <button type="submit">Registrar Manutenção</button>
+    </form>
+
+    <!-- Formulário Venda -->
+    <form id="formVenda">
+      <input type="text" id="vendaComandante" placeholder="Comandante / Responsável" required />
+      <input type="text" id="vendaAeronave" placeholder="Aeronave (modelo + matrícula)" required />
+      <input type="date" id="vendaData" required />
+      <input type="number" id="vendaLucro" placeholder="Lucro da Venda (R$)" required />
+      <button type="submit">Registrar Venda</button>
+    </form>
+
+    <!-- Formulário Compra -->
+    <form id="formCompra">
+      <input type="text" id="compraAeronave" placeholder="Aeronave (modelo + matrícula)" required />
+      <input type="text" id="compraDescricao" placeholder="Descrição da Compra" required />
+      <input type="date" id="compraData" required />
+      <input type="number" id="compraCusto" placeholder="Custo da Compra (R$)" required />
+      <button type="submit">Registrar Compra</button>
+    </form>
+
     <div class="grafico-container">
-      <h2>Histórico de Lucros (Voos)</h2>
+      <h2>Histórico de Lucros (Voos e Vendas)</h2>
       <canvas id="graficoLucro" height="100"></canvas>
     </div>
 
@@ -115,13 +156,6 @@
 
     <section>
       <h2>Transações de Manutenção Recentes</h2>
-      <button id="abrirFormManutencao">Registrar Manutenção</button>
-      <form id="formManutencao">
-        <input type="text" id="manutAeronave" placeholder="Aeronave (modelo + matrícula)" required />
-        <input type="text" id="manutDescricao" placeholder="Descrição" required />
-        <input type="number" id="manutCusto" placeholder="Custo (R$)" required />
-        <button type="submit">Registrar</button>
-      </form>
       <table>
         <thead>
           <tr>
@@ -175,7 +209,7 @@
       saldoEl.textContent = saldo !== null ? `R$ ${saldo.toLocaleString('pt-BR')}` : "R$ 0";
     });
 
-    // Voos
+    // Voos + Vendas (entradas financeiras)
     onValue(diarioRef, (snap) => {
       const data = snap.val();
       tabelaVoos.innerHTML = "";
@@ -183,6 +217,7 @@
       rotulosGrafico = [];
       voosAtuais = data || {};
 
+      // Ordena por timestamp para histórico coerente
       const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
 
       ordenado.forEach(([id, voo]) => {
@@ -197,7 +232,7 @@
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${voo.data}</td>
-          <td>${voo.comandante} (${voo.vid})</td>
+          <td>${voo.comandante || "-"}</td>
           <td>${modelo}</td>
           <td>${matricula}</td>
           <td>R$ ${voo.lucro.toLocaleString('pt-BR')}</td>
@@ -235,6 +270,7 @@
       adicionarEventosApagar();
     });
 
+    // Função para adicionar eventos aos botões de apagar
     function adicionarEventosApagar() {
       document.querySelectorAll(".btn-apagar").forEach(btn => {
         btn.onclick = async () => {
@@ -243,10 +279,10 @@
 
           if (tipo === "voo") {
             const voo = voosAtuais[id];
-            if (!voo || !confirm(`Apagar voo de ${voo.comandante} em ${voo.data}?`)) return;
+            if (!voo || !confirm(`Apagar voo/venda de ${voo.comandante || "-"} em ${voo.data}?`)) return;
             await remove(ref(db, `diario_bordo/${id}`));
             await runTransaction(saldoRef, saldo => saldo - voo.lucro);
-            alert("Voo removido.");
+            alert("Entrada financeira removida.");
           } else {
             const m = manutencoesAtuais[id];
             if (!m || !confirm(`Apagar manutenção de ${m.aeronave} em ${m.data}?`)) return;
@@ -258,6 +294,7 @@
       });
     }
 
+    // Renderizar gráfico
     function renderizarGrafico() {
       if (chartInstance) chartInstance.destroy();
       chartInstance = new Chart(graficoCanvas, {
@@ -279,13 +316,44 @@
       });
     }
 
-    // Formulário de manutenção
-    const btnAbrirForm = document.getElementById("abrirFormManutencao");
+    // Toggle Forms
+    const btnAbrirFormManutencao = document.getElementById("btnAbrirFormManutencao");
+    const btnAbrirFormVenda = document.getElementById("btnAbrirFormVenda");
+    const btnAbrirFormCompra = document.getElementById("btnAbrirFormCompra");
+
     const formManutencao = document.getElementById("formManutencao");
-    btnAbrirForm.onclick = () => {
-      formManutencao.style.display = formManutencao.style.display === "none" ? "block" : "none";
+    const formVenda = document.getElementById("formVenda");
+    const formCompra = document.getElementById("formCompra");
+
+    function esconderTodosForms() {
+      formManutencao.style.display = "none";
+      formVenda.style.display = "none";
+      formCompra.style.display = "none";
+    }
+
+    btnAbrirFormManutencao.onclick = () => {
+      if (formManutencao.style.display === "block") formManutencao.style.display = "none";
+      else {
+        esconderTodosForms();
+        formManutencao.style.display = "block";
+      }
+    };
+    btnAbrirFormVenda.onclick = () => {
+      if (formVenda.style.display === "block") formVenda.style.display = "none";
+      else {
+        esconderTodosForms();
+        formVenda.style.display = "block";
+      }
+    };
+    btnAbrirFormCompra.onclick = () => {
+      if (formCompra.style.display === "block") formCompra.style.display = "none";
+      else {
+        esconderTodosForms();
+        formCompra.style.display = "block";
+      }
     };
 
+    // Submeter formulário Manutenção
     formManutencao.onsubmit = async (e) => {
       e.preventDefault();
       const aeronave = document.getElementById("manutAeronave").value.trim();
@@ -303,6 +371,70 @@
       alert("Manutenção registrada com sucesso!");
       formManutencao.reset();
       formManutencao.style.display = "none";
+    };
+
+    // Submeter formulário Venda
+    formVenda.onsubmit = async (e) => {
+      e.preventDefault();
+      const comandante = document.getElementById("vendaComandante").value.trim();
+      const aeronave = document.getElementById("vendaAeronave").value.trim();
+      const data = document.getElementById("vendaData").value;
+      const lucro = parseFloat(document.getElementById("vendaLucro").value);
+
+      if (!data) {
+        alert("Preencha a data da venda.");
+        return;
+      }
+
+      const venda = {
+        comandante,
+        vid: "-", // Pode ajustar se quiser adicionar ID do voo
+        data: new Date(data).toLocaleDateString("pt-BR"),
+        aeronave,
+        rota: "Venda",
+        milhas: 0,
+        custos: 0,
+        receita: lucro,
+        lucro,
+        duracaoMinutos: 0,
+        duracaoStr: "0min",
+        observacoes: "Venda da aeronave",
+        timestamp: Date.now()
+      };
+
+      await push(diarioRef, venda);
+      await runTransaction(saldoRef, saldo => (saldo || 0) + lucro);
+      alert("Venda registrada e saldo atualizado!");
+      formVenda.reset();
+      formVenda.style.display = "none";
+    };
+
+    // Submeter formulário Compra
+    formCompra.onsubmit = async (e) => {
+      e.preventDefault();
+      const aeronave = document.getElementById("compraAeronave").value.trim();
+      const descricao = document.getElementById("compraDescricao").value.trim();
+      const data = document.getElementById("compraData").value;
+      const custo = parseFloat(document.getElementById("compraCusto").value);
+
+      if (!data) {
+        alert("Preencha a data da compra.");
+        return;
+      }
+
+      const compra = {
+        aeronave,
+        descricao,
+        custo,
+        data: new Date(data).toLocaleDateString("pt-BR"),
+        timestamp: Date.now()
+      };
+
+      await push(manutencaoRef, compra);
+      await runTransaction(saldoRef, saldo => (saldo || 0) - custo);
+      alert("Compra registrada e saldo atualizado!");
+      formCompra.reset();
+      formCompra.style.display = "none";
     };
   </script>
 </body>
