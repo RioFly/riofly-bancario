@@ -169,6 +169,39 @@
         <tbody id="tabelaManutencao"></tbody>
       </table>
     </section>
+
+    <section>
+      <h2>Vendas de Aeronaves Recentes</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Comandante</th>
+            <th>Aeronave</th>
+            <th>Lucro (R$)</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tabelaVendas"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Compras de Aeronaves Recentes</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Aeronave</th>
+            <th>Descrição</th>
+            <th>Custo (R$)</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tabelaCompras"></tbody>
+      </table>
+    </section>
+
   </main>
 
   <script type="module">
@@ -191,16 +224,22 @@
     const saldoEl = document.getElementById("saldoAtual");
     const tabelaVoos = document.getElementById("tabelaVoos");
     const tabelaManutencao = document.getElementById("tabelaManutencao");
+    const tabelaVendas = document.getElementById("tabelaVendas");
+    const tabelaCompras = document.getElementById("tabelaCompras");
     const graficoCanvas = document.getElementById("graficoLucro");
 
     const saldoRef = ref(db, 'banco/saldo');
     const diarioRef = ref(db, 'diario_bordo');
     const manutencaoRef = ref(db, 'manutencao');
+    const vendasRef = ref(db, 'vendas_aeronaves');
+    const comprasRef = ref(db, 'compras_aeronaves');
 
     let dadosGrafico = [];
     let rotulosGrafico = [];
     let voosAtuais = {};
     let manutencoesAtuais = {};
+    let vendasAtuais = {};
+    let comprasAtuais = {};
     let chartInstance = null;
 
     // Saldo
@@ -209,15 +248,12 @@
       saldoEl.textContent = saldo !== null ? `R$ ${saldo.toLocaleString('pt-BR')}` : "R$ 0";
     });
 
-    // Voos + Vendas (entradas financeiras)
+    // Voos
     onValue(diarioRef, (snap) => {
       const data = snap.val();
       tabelaVoos.innerHTML = "";
-      dadosGrafico = [];
-      rotulosGrafico = [];
       voosAtuais = data || {};
-
-      // Ordena por timestamp para histórico coerente
+      atualizarGrafico();
       const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
 
       ordenado.forEach(([id, voo]) => {
@@ -239,12 +275,8 @@
           <td><button class="btn-apagar" data-id="${id}" data-tipo="voo">Apagar</button></td>
         `;
         tabelaVoos.appendChild(tr);
-
-        rotulosGrafico.push(voo.data);
-        dadosGrafico.push(voo.lucro);
       });
 
-      renderizarGrafico();
       adicionarEventosApagar();
     });
 
@@ -270,33 +302,75 @@
       adicionarEventosApagar();
     });
 
-    // Função para adicionar eventos aos botões de apagar
-    function adicionarEventosApagar() {
-      document.querySelectorAll(".btn-apagar").forEach(btn => {
-        btn.onclick = async () => {
-          const id = btn.dataset.id;
-          const tipo = btn.dataset.tipo;
+    // Vendas
+    onValue(vendasRef, (snap) => {
+      const data = snap.val();
+      tabelaVendas.innerHTML = "";
+      vendasAtuais = data || {};
 
-          if (tipo === "voo") {
-            const voo = voosAtuais[id];
-            if (!voo || !confirm(`Apagar voo/venda de ${voo.comandante || "-"} em ${voo.data}?`)) return;
-            await remove(ref(db, `diario_bordo/${id}`));
-            await runTransaction(saldoRef, saldo => saldo - voo.lucro);
-            alert("Entrada financeira removida.");
-          } else {
-            const m = manutencoesAtuais[id];
-            if (!m || !confirm(`Apagar manutenção de ${m.aeronave} em ${m.data}?`)) return;
-            await remove(ref(db, `manutencao/${id}`));
-            await runTransaction(saldoRef, saldo => saldo + m.custo);
-            alert("Manutenção removida.");
-          }
-        };
+      const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
+      ordenado.forEach(([id, venda]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${venda.data}</td>
+          <td>${venda.comandante}</td>
+          <td>${venda.aeronave}</td>
+          <td>R$ ${venda.lucro.toLocaleString('pt-BR')}</td>
+          <td><button class="btn-apagar" data-id="${id}" data-tipo="venda">Apagar</button></td>
+        `;
+        tabelaVendas.appendChild(tr);
       });
-    }
 
-    // Renderizar gráfico
-    function renderizarGrafico() {
+      adicionarEventosApagar();
+      atualizarGrafico();
+    });
+
+    // Compras
+    onValue(comprasRef, (snap) => {
+      const data = snap.val();
+      tabelaCompras.innerHTML = "";
+      comprasAtuais = data || {};
+
+      const ordenado = Object.entries(data || {}).sort((a, b) => a[1].timestamp - b[1].timestamp);
+      ordenado.forEach(([id, compra]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${compra.data}</td>
+          <td>${compra.aeronave}</td>
+          <td>${compra.descricao}</td>
+          <td>R$ ${compra.custo.toLocaleString('pt-BR')}</td>
+          <td><button class="btn-apagar" data-id="${id}" data-tipo="compra">Apagar</button></td>
+        `;
+        tabelaCompras.appendChild(tr);
+      });
+
+      adicionarEventosApagar();
+    });
+
+    // Função para atualizar gráfico com voos + vendas
+    function atualizarGrafico() {
+      dadosGrafico = [];
+      rotulosGrafico = [];
+
+      // Vamos juntar voos + vendas, ordenados por timestamp
+      let combinados = [];
+
+      for (const [id, voo] of Object.entries(voosAtuais)) {
+        combinados.push({ tipo: 'voo', data: voo.data, lucro: voo.lucro, timestamp: voo.timestamp });
+      }
+      for (const [id, venda] of Object.entries(vendasAtuais)) {
+        combinados.push({ tipo: 'venda', data: venda.data, lucro: venda.lucro, timestamp: venda.timestamp });
+      }
+
+      combinados.sort((a, b) => a.timestamp - b.timestamp);
+
+      combinados.forEach(item => {
+        rotulosGrafico.push(item.data);
+        dadosGrafico.push(item.lucro);
+      });
+
       if (chartInstance) chartInstance.destroy();
+
       chartInstance = new Chart(graficoCanvas, {
         type: 'line',
         data: {
@@ -316,11 +390,51 @@
       });
     }
 
+    // Adicionar eventos apagar para todas as tabelas
+    function adicionarEventosApagar() {
+      document.querySelectorAll(".btn-apagar").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.id;
+          const tipo = btn.dataset.tipo;
+
+          let confirmMsg = "";
+          if (tipo === "voo") {
+            const voo = voosAtuais[id];
+            confirmMsg = `Apagar voo de ${voo.comandante || "-"} em ${voo.data}?`;
+            if (!voo || !confirm(confirmMsg)) return;
+            await remove(ref(db, `diario_bordo/${id}`));
+            await runTransaction(saldoRef, saldo => saldo - voo.lucro);
+            alert("Voo removido.");
+          } else if (tipo === "manutencao") {
+            const m = manutencoesAtuais[id];
+            confirmMsg = `Apagar manutenção de ${m.aeronave} em ${m.data}?`;
+            if (!m || !confirm(confirmMsg)) return;
+            await remove(ref(db, `manutencao/${id}`));
+            await runTransaction(saldoRef, saldo => saldo + m.custo);
+            alert("Manutenção removida.");
+          } else if (tipo === "venda") {
+            const venda = vendasAtuais[id];
+            confirmMsg = `Apagar venda de ${venda.aeronave} em ${venda.data}?`;
+            if (!venda || !confirm(confirmMsg)) return;
+            await remove(ref(db, `vendas_aeronaves/${id}`));
+            await runTransaction(saldoRef, saldo => saldo - venda.lucro);
+            alert("Venda removida.");
+          } else if (tipo === "compra") {
+            const compra = comprasAtuais[id];
+            confirmMsg = `Apagar compra de ${compra.aeronave} em ${compra.data}?`;
+            if (!compra || !confirm(confirmMsg)) return;
+            await remove(ref(db, `compras_aeronaves/${id}`));
+            await runTransaction(saldoRef, saldo => saldo + compra.custo);
+            alert("Compra removida.");
+          }
+        };
+      });
+    }
+
     // Toggle Forms
     const btnAbrirFormManutencao = document.getElementById("btnAbrirFormManutencao");
     const btnAbrirFormVenda = document.getElementById("btnAbrirFormVenda");
     const btnAbrirFormCompra = document.getElementById("btnAbrirFormCompra");
-
     const formManutencao = document.getElementById("formManutencao");
     const formVenda = document.getElementById("formVenda");
     const formCompra = document.getElementById("formCompra");
@@ -332,28 +446,33 @@
     }
 
     btnAbrirFormManutencao.onclick = () => {
-      if (formManutencao.style.display === "block") formManutencao.style.display = "none";
-      else {
+      if (formManutencao.style.display === "block") {
+        formManutencao.style.display = "none";
+      } else {
         esconderTodosForms();
         formManutencao.style.display = "block";
       }
     };
+
     btnAbrirFormVenda.onclick = () => {
-      if (formVenda.style.display === "block") formVenda.style.display = "none";
-      else {
+      if (formVenda.style.display === "block") {
+        formVenda.style.display = "none";
+      } else {
         esconderTodosForms();
         formVenda.style.display = "block";
       }
     };
+
     btnAbrirFormCompra.onclick = () => {
-      if (formCompra.style.display === "block") formCompra.style.display = "none";
-      else {
+      if (formCompra.style.display === "block") {
+        formCompra.style.display = "none";
+      } else {
         esconderTodosForms();
         formCompra.style.display = "block";
       }
     };
 
-    // Submeter formulário Manutenção
+    // Submit Manutencao
     formManutencao.onsubmit = async (e) => {
       e.preventDefault();
       const aeronave = document.getElementById("manutAeronave").value.trim();
@@ -373,7 +492,7 @@
       formManutencao.style.display = "none";
     };
 
-    // Submeter formulário Venda
+    // Submit Venda
     formVenda.onsubmit = async (e) => {
       e.preventDefault();
       const comandante = document.getElementById("vendaComandante").value.trim();
@@ -382,34 +501,26 @@
       const lucro = parseFloat(document.getElementById("vendaLucro").value);
 
       if (!data) {
-        alert("Preencha a data da venda.");
+        alert("Por favor, informe a data da venda.");
         return;
       }
 
-      const venda = {
+      const novaVenda = {
         comandante,
-        vid: "-", // Pode ajustar se quiser adicionar ID do voo
-        data: new Date(data).toLocaleDateString("pt-BR"),
         aeronave,
-        rota: "Venda",
-        milhas: 0,
-        custos: 0,
-        receita: lucro,
+        data: new Date(data).toLocaleDateString("pt-BR"),
         lucro,
-        duracaoMinutos: 0,
-        duracaoStr: "0min",
-        observacoes: "Venda da aeronave",
-        timestamp: Date.now()
+        timestamp: new Date(data).getTime()
       };
 
-      await push(diarioRef, venda);
-      await runTransaction(saldoRef, saldo => (saldo || 0) + lucro);
-      alert("Venda registrada e saldo atualizado!");
+      await push(vendasRef, novaVenda);
+      await runTransaction(saldoRef, saldo => saldo + lucro);
+      alert("Venda registrada com sucesso!");
       formVenda.reset();
       formVenda.style.display = "none";
     };
 
-    // Submeter formulário Compra
+    // Submit Compra
     formCompra.onsubmit = async (e) => {
       e.preventDefault();
       const aeronave = document.getElementById("compraAeronave").value.trim();
@@ -418,21 +529,21 @@
       const custo = parseFloat(document.getElementById("compraCusto").value);
 
       if (!data) {
-        alert("Preencha a data da compra.");
+        alert("Por favor, informe a data da compra.");
         return;
       }
 
-      const compra = {
+      const novaCompra = {
         aeronave,
         descricao,
         custo,
         data: new Date(data).toLocaleDateString("pt-BR"),
-        timestamp: Date.now()
+        timestamp: new Date(data).getTime()
       };
 
-      await push(manutencaoRef, compra);
-      await runTransaction(saldoRef, saldo => (saldo || 0) - custo);
-      alert("Compra registrada e saldo atualizado!");
+      await push(comprasRef, novaCompra);
+      await runTransaction(saldoRef, saldo => saldo - custo);
+      alert("Compra registrada com sucesso!");
       formCompra.reset();
       formCompra.style.display = "none";
     };
